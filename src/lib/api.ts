@@ -8,10 +8,39 @@ export type RevenuePoint = {
 
 export type Scenario = "conservative" | "realistic" | "optimistic";
 
+type XanoRevenueRow = {
+  id: number;
+  Mese: number | string;
+  Rev_Estetiste_PRO: number | string;
+  Rev_Influencer_PRO: number | string;
+  Rev_Cabina_sharing: number | string;
+  Rev_Saloni_PRO: number | string;
+};
+
+const DEFAULT_REVENUE_URL = "https://xbut-eryu-hhsg.f2.xano.io/api:ETPnqD9B/glowskill_revenues";
+
 const SCENARIO_MULTIPLIERS: Record<Scenario, number> = {
   conservative: 0.8,
   realistic: 1,
   optimistic: 1.2,
+};
+
+const toNumber = (value: number | string): number => {
+  if (typeof value === "number") return value;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const applyScenarioMultiplier = (data: RevenuePoint[], scenario: Scenario): RevenuePoint[] => {
+  const multiplier = SCENARIO_MULTIPLIERS[scenario];
+  if (multiplier === 1) return data;
+  return data.map((point) => ({
+    ...point,
+    estPro: Math.round(point.estPro * multiplier),
+    infPro: Math.round(point.infPro * multiplier),
+    cabina: Math.round(point.cabina * multiplier),
+    saloniPro: Math.round(point.saloniPro * multiplier),
+  }));
 };
 
 const buildDemoData = (): RevenuePoint[] =>
@@ -24,35 +53,50 @@ const buildDemoData = (): RevenuePoint[] =>
     return { month, estPro, infPro, cabina, saloniPro };
   });
 
-const scaleDemoData = (data: RevenuePoint[], scenario: Scenario) => {
-  const multiplier = SCENARIO_MULTIPLIERS[scenario];
-  if (multiplier === 1) return data;
-  return data.map((point) => ({
-    ...point,
-    estPro: Math.round(point.estPro * multiplier),
-    infPro: Math.round(point.infPro * multiplier),
-    cabina: Math.round(point.cabina * multiplier),
-    saloniPro: Math.round(point.saloniPro * multiplier),
-  }));
+const mapXanoRowsToRevenuePoints = (rows: XanoRevenueRow[]): RevenuePoint[] =>
+  rows
+    .map((row) => ({
+      month: toNumber(row.Mese),
+      estPro: Math.round(toNumber(row.Rev_Estetiste_PRO)),
+      infPro: Math.round(toNumber(row.Rev_Influencer_PRO)),
+      cabina: Math.round(toNumber(row.Rev_Cabina_sharing)),
+      saloniPro: Math.round(toNumber(row.Rev_Saloni_PRO)),
+    }))
+    .filter((row) => Number.isFinite(row.month) && row.month > 0)
+    .sort((a, b) => a.month - b.month);
+
+const getRevenueEndpoint = () => {
+  if (process.env.NEXT_PUBLIC_XANO_REVENUE_URL) {
+    return process.env.NEXT_PUBLIC_XANO_REVENUE_URL;
+  }
+  if (process.env.NEXT_PUBLIC_XANO_BASE) {
+    return `${process.env.NEXT_PUBLIC_XANO_BASE.replace(/\/$/, "")}/glowskill_revenues`;
+  }
+  return DEFAULT_REVENUE_URL;
 };
 
-export async function fetchRevenue(scenario: Scenario = "realistic"): Promise<RevenuePoint[]> {
-  const base = process.env.NEXT_PUBLIC_XANO_BASE;
-  const fallback = scaleDemoData(buildDemoData(), scenario);
-  if (!base) return fallback;
+export async function fetchRevenue(
+  scenario: Scenario = "realistic",
+): Promise<{ data: RevenuePoint[]; usedFallback: boolean }> {
+  const fallback = applyScenarioMultiplier(buildDemoData(), scenario);
 
-  const url = `${base.replace(/\/$/, "")}/revenue/streams?scenario=${scenario}`;
+  const url = getRevenueEndpoint();
   try {
     const response = await fetch(url, { cache: "no-store" });
-    if (!response.ok) throw new Error("Bad status");
-    const data: unknown = await response.json();
-    if (Array.isArray(data) && data.length) {
-      return data as RevenuePoint[];
+    if (!response.ok) throw new Error(`Bad status: ${response.status}`);
+    const payload: unknown = await response.json();
+    if (!Array.isArray(payload)) {
+      throw new Error("Unexpected response shape");
     }
+    const mapped = mapXanoRowsToRevenuePoints(payload as XanoRevenueRow[]);
+    if (mapped.length === 0) {
+      throw new Error("Empty revenue dataset");
+    }
+    return { data: applyScenarioMultiplier(mapped, scenario), usedFallback: false };
   } catch (error) {
     console.error("Failed to load revenue data", error);
+    return { data: fallback, usedFallback: true };
   }
-  return fallback;
 }
 
 export async function fetchKpis(): Promise<Record<string, number> | null> {

@@ -25,11 +25,14 @@ export default function ProspectusPage() {
     setLoading(true);
     setError(null);
     try {
-      const [revenue, summary] = await Promise.all([fetchRevenue(selectedScenario), fetchKpis()]);
-      setData(revenue);
+      const [revenueResult, summary] = await Promise.all([
+        fetchRevenue(selectedScenario),
+        fetchKpis(),
+      ]);
+      setData(revenueResult.data);
       setKpis(summary);
-      if (!process.env.NEXT_PUBLIC_XANO_BASE) {
-        setError("NEXT_PUBLIC_XANO_BASE not set. Showing demo data.");
+      if (revenueResult.usedFallback) {
+        setError("Unable to load data from Xano. Showing demo data.");
       }
     } catch (err) {
       console.error(err);
