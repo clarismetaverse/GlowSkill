@@ -7,6 +7,7 @@ import { FileDown, RefreshCw } from "lucide-react";
 
 import { ScenarioSelect } from "@/components/ScenarioSelect";
 import { RevenueByStreamChart } from "@/components/charts/RevenueByStream";
+import { CostHistogram } from "@/components/charts/CostHistogram";
 import { TotalRevenueChart } from "@/components/charts/TotalRevenue";
 import { ProspectusCopy } from "@/components/ProspectusCopy";
 import { Button } from "@/components/ui/button";
@@ -135,6 +136,9 @@ export default function ProspectusPage() {
       <div className="grid gap-6 md:grid-cols-2">
         <RevenueByStreamChart data={data} loading={loading} error={error} />
         <TotalRevenueChart data={data} />
+        <div className="md:col-span-2">
+          <CostHistogram />
+        </div>
       </div>
 
       <ProspectusCopy />

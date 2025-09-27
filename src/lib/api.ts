@@ -8,6 +8,17 @@ export type RevenuePoint = {
 
 export type Scenario = "conservative" | "realistic" | "optimistic";
 
+export type CostConfig = {
+  id: number;
+  key: string;
+  label: string;
+  amount: number;
+  frequency: number;
+  start_month: number;
+  end_month: number;
+  color: string;
+};
+
 type XanoRevenueRow = {
   id: number;
   Mese: number | string;
@@ -18,6 +29,7 @@ type XanoRevenueRow = {
 };
 
 const DEFAULT_REVENUE_URL = "https://xbut-eryu-hhsg.f2.xano.io/api:ETPnqD9B/glowskill_revenues";
+const DEFAULT_COST_URL = "https://xbut-eryu-hhsg.f2.xano.io/api:ETPnqD9B/gskiiicost";
 
 const SCENARIO_MULTIPLIERS: Record<Scenario, number> = {
   conservative: 0.8,
@@ -75,6 +87,16 @@ const getRevenueEndpoint = () => {
   return DEFAULT_REVENUE_URL;
 };
 
+const getCostEndpoint = () => {
+  if (process.env.NEXT_PUBLIC_XANO_COST_URL) {
+    return process.env.NEXT_PUBLIC_XANO_COST_URL;
+  }
+  if (process.env.NEXT_PUBLIC_XANO_BASE) {
+    return `${process.env.NEXT_PUBLIC_XANO_BASE.replace(/\/$/, "")}/gskiiicost`;
+  }
+  return DEFAULT_COST_URL;
+};
+
 export async function fetchRevenue(
   scenario: Scenario = "realistic",
 ): Promise<{ data: RevenuePoint[]; usedFallback: boolean }> {
@@ -112,4 +134,39 @@ export async function fetchKpis(): Promise<Record<string, number> | null> {
     console.error("Failed to load KPI summary", error);
     return null;
   }
+}
+
+type XanoCostRow = {
+  id: number;
+  key: string;
+  label: string;
+  amount: number | string;
+  frequency: number | string;
+  start_month: number | string;
+  end_month: number | string;
+  color: string;
+};
+
+export async function fetchCostConfig(): Promise<CostConfig[]> {
+  const url = getCostEndpoint();
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`Failed to load cost config: ${response.status}`);
+  }
+  const payload: unknown = await response.json();
+  if (!Array.isArray(payload)) {
+    throw new Error("Unexpected cost config response shape");
+  }
+  return (payload as XanoCostRow[])
+    .map((row) => ({
+      id: row.id,
+      key: row.key,
+      label: row.label,
+      amount: toNumber(row.amount),
+      frequency: Math.max(0, Math.floor(toNumber(row.frequency))),
+      start_month: Math.max(1, Math.floor(toNumber(row.start_month))),
+      end_month: Math.min(24, Math.floor(toNumber(row.end_month))),
+      color: row.color,
+    }))
+    .filter((row) => row.key && row.label && Number.isFinite(row.amount));
 }
